@@ -23,7 +23,6 @@ pub fn list_deposit(deposit_id: i32) -> Result<String, NotFound<String>> {
     Ok(serde_json::to_string(&response).unwrap())
 }
 
-
 #[put("/update_deposit/<deposit_id>", format = "application/json", data = "<deposit>")]
 pub fn update_deposit(deposit_id: i32, deposit: Json<NewDeposit>) -> Created<String> {
     update::update_deposit(deposit_id, &deposit.account_id, &deposit.amount, &deposit.deposit_date, &deposit.comment)

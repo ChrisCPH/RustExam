@@ -23,7 +23,6 @@ pub fn list_account(account_id: i32) -> Result<String, NotFound<String>> {
     Ok(serde_json::to_string(&response).unwrap())
 }
 
-
 #[put("/update_account/<account_id>", format = "application/json", data = "<account>")]
 pub fn update_account(account_id: i32, account: Json<NewAccount>) -> Created<String> {
     update::update_account(account_id, &account.balance, &account.currency, &account.account_type)

@@ -64,43 +64,69 @@ pub fn create_account(account: Json<NewAccount>) -> Created<String> {
 // Deposit
 
 pub fn create_deposit(deposit: Json<NewDeposit>) -> Created<String> {
-    
     let deposit = deposit.into_inner();
 
-    match diesel::insert_into(deposit::table)
-    .values(&deposit)
-    .get_result::<Deposit>(&mut establish_connection()) {
-        Ok(deposit) => {
-            let response = Response { body: ResponseBody::Deposit(deposit) };
-            Created::new("").tagged_body(serde_json::to_string(&response).unwrap())
-        },
-        Err(err) => match err {
-            _ => {
-                panic!("Database error - {}", err);
-            }
-        }
-    }
+    let connection = &mut establish_connection();
+
+    connection.transaction::<_, diesel::result::Error, _>(|conn| {
+
+        let new_deposit = diesel::insert_into(deposit::table)
+            .values(&deposit)
+            .get_result::<Deposit>(conn)?;
+
+        let mut account: Accounts = accounts::table
+            .filter(accounts::account_id.eq(deposit.account_id))
+            .first(conn)?;
+
+        account.balance += deposit.amount;
+
+        diesel::update(accounts::table.filter(accounts::account_id.eq(deposit.account_id)))
+            .set(accounts::balance.eq(account.balance))
+            .execute(conn)?;
+
+        Ok(new_deposit)
+    }).map(|deposit| {
+        let response = Response { body: ResponseBody::Deposit(deposit) };
+        Created::new("").tagged_body(serde_json::to_string(&response).unwrap())
+    }).map_err(|err| {
+        panic!("Database error - {}", err);
+    }).unwrap()
 }
 
 // Withdraw
 
 pub fn create_withdraw(withdraw: Json<NewWithdraw>) -> Created<String> {
-    
     let withdraw = withdraw.into_inner();
 
-    match diesel::insert_into(withdraw::table)
-    .values(&withdraw)
-    .get_result::<Withdraw>(&mut establish_connection()) {
-        Ok(withdraw) => {
-            let response = Response { body: ResponseBody::Withdraw(withdraw) };
-            Created::new("").tagged_body(serde_json::to_string(&response).unwrap())
-        },
-        Err(err) => match err {
-            _ => {
-                panic!("Database error - {}", err);
-            }
+    let connection = &mut establish_connection();
+
+    connection.transaction::<_, diesel::result::Error, _>(|conn| {
+
+        let mut account: Accounts = accounts::table
+            .filter(accounts::account_id.eq(withdraw.account_id))
+            .first(conn)?;
+
+        if account.balance < withdraw.amount {
+            return Err(diesel::result::Error::RollbackTransaction);
         }
-    }
+
+        let new_withdraw = diesel::insert_into(withdraw::table)
+            .values(&withdraw)
+            .get_result::<Withdraw>(conn)?;
+
+        account.balance -= withdraw.amount;
+
+        diesel::update(accounts::table.filter(accounts::account_id.eq(withdraw.account_id)))
+            .set(accounts::balance.eq(account.balance))
+            .execute(conn)?;
+
+        Ok(new_withdraw)
+    }).map(|withdraw| {
+        let response = Response { body: ResponseBody::Withdraw(withdraw) };
+        Created::new("").tagged_body(serde_json::to_string(&response).unwrap())
+    }).map_err(|err| {
+        panic!("Database error - {}", err);
+    }).unwrap()
 }
 
 // UserAcccount
